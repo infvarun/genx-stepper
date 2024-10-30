@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { Check, Download, ChevronLeft, ChevronRight, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card } from 'flowbite-react';
 import { Step, StepperUIProps } from './stepper-types';
+import SignatureModal from './signature-modal';
 
 const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIProps) => {
   const [currentStep, setCurrentStep] = useState(initialStep);
@@ -13,6 +14,9 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
   const [managerVerified, setManagerVerified] = useState(new Set<number>());
   const [showWarning, setShowWarning] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState(new Set<number>([initialStep]));
+  const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
+  const [signature, setSignature] = useState<string | null>(null);
+
 
   const steps: Step[] = [
     {
@@ -56,6 +60,12 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
       requiredRole: 'devops'
     }
   ];
+
+  const handleSignatureSubmit = (signatureData: string) => {
+    setSignature(signatureData);
+    handleManagerVerify(currentStep);
+    // You might want to save the signature data to your backend here
+  };
 
   const handleNext = () => {
     if (currentStep < steps.length && canProceedToNextStep()) {
@@ -274,6 +284,32 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
 
                     <div className="border-t border-gray-200 my-6"></div>
 
+                    {currentStep === steps.length && (
+                    <>
+                      <div className="border-t border-gray-200 my-6"></div>
+                      <div className="space-y-4">
+                        <h4 className="font-medium text-gray-900">Final Approval</h4>
+                        {signature ? (
+                          <div className="space-y-2">
+                            <p className="text-sm text-green-600">E-signature captured successfully</p>
+                            <img 
+                              src={signature} 
+                              alt="Signature" 
+                              className="max-h-20 border border-gray-200 rounded p-2"
+                            />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setIsSignatureModalOpen(true)}
+                            className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                          >
+                            Capture E-Signature
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                    
                     <div className="space-y-4">
                       <h4 className="font-medium text-gray-900">Step Verification</h4>
                       <div className="space-y-3">
@@ -298,6 +334,11 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
                       </div>
                     </div>
                   </div>
+                  <SignatureModal
+                    isOpen={isSignatureModalOpen}
+                    onClose={() => setIsSignatureModalOpen(false)}
+                    onSubmit={handleSignatureSubmit}
+                  />
                 </Card>
               </div>
             </div>
