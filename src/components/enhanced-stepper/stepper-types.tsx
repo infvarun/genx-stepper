@@ -10,6 +10,11 @@ export interface Step {
   
   export interface StepperUIProps {
     initialStep?: number;
-    onStepComplete?: (stepNumber: number, isCompleted: boolean) => void;
+    onStepComplete?: (stepNumber: number, isCompleted: boolean, timing: StepTiming) => void;
     onStepChange?: (newStep: number) => void;
+  }
+
+  export interface StepTiming {
+    startTime: Date;
+    finishTime?: Date;
   }

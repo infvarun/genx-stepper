@@ -4,8 +4,9 @@
 import React, { useState } from 'react';
 import { Check, Download, ChevronLeft, ChevronRight, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card } from 'flowbite-react';
-import { Step, StepperUIProps } from './stepper-types';
+import { Step, StepperUIProps, StepTiming } from './stepper-types';
 import SignatureModal from './signature-modal';
+import { format } from 'date-fns';
 
 const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIProps) => {
   const [currentStep, setCurrentStep] = useState(initialStep);
@@ -14,6 +15,7 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
   const [managerVerified, setManagerVerified] = useState(new Set<number>());
   const [showWarning, setShowWarning] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState(new Set<number>([initialStep]));
+  const [stepTimings, setStepTimings] = useState<Map<number, StepTiming>>(new Map());
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
 
@@ -24,7 +26,7 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
       title: 'Download Requirements',
       subtitle: 'Project Documentation Phase',
       description: 'Download and review all project requirements and specifications.',
-      downloadUrl: '/requirements.pdf',
+      downloadUrl: '',
       requiredRole: 'developer'
     },
     {
@@ -48,7 +50,7 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
       title: 'Testing',
       subtitle: 'QA Phase',
       description: 'Execute test cases and document results.',
-      downloadUrl: '/testing.pdf',
+      downloadUrl: '',
       requiredRole: 'qa'
     },
     {
@@ -61,6 +63,16 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
     }
   ];
 
+  // Add useEffect to record initial step start time
+  React.useEffect(() => {
+    setStepTimings(new Map([[initialStep, { startTime: new Date() }]]));
+  }, [initialStep]);
+
+  // Add this function to format timestamps
+  const formatTimestamp = (date: Date) => {
+    return format(date, 'MMM d, yyyy HH:mm:ss');
+  };
+
   const handleSignatureSubmit = (signatureData: string) => {
     setSignature(signatureData);
     handleManagerVerify(currentStep);
@@ -71,6 +83,15 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
     if (currentStep < steps.length && canProceedToNextStep()) {
       const nextStep = currentStep + 1;
       setCurrentStep(nextStep);
+      
+      // Record start time for next step
+      setStepTimings(prev => {
+        const newTimings = new Map(prev);
+        if (!newTimings.has(nextStep)) {
+          newTimings.set(nextStep, { startTime: new Date() });
+        }
+        return newTimings;
+      });
       
       // Collapse previous step and expand next step
       const newExpanded = new Set<number>([nextStep]);
@@ -130,7 +151,9 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
 
     setShowWarning(false);
     const newVerified = new Set(managerVerified);
-    if (newVerified.has(stepNumber)) {
+    const wasVerified = newVerified.has(stepNumber);
+    
+    if (wasVerified) {
       newVerified.delete(stepNumber);
     } else {
       newVerified.add(stepNumber);
@@ -140,10 +163,32 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
     const newCompleted = new Set(completedSteps);
     if (newVerified.has(stepNumber)) {
       newCompleted.add(stepNumber);
-      onStepComplete?.(stepNumber, true);
+      // Record finish time when both checkboxes are checked
+      setStepTimings(prev => {
+        const newTimings = new Map(prev);
+        const currentTiming = newTimings.get(stepNumber);
+        if (currentTiming) {
+          newTimings.set(stepNumber, {
+            ...currentTiming,
+            finishTime: new Date()
+          });
+        }
+        return newTimings;
+      });
+      onStepComplete?.(stepNumber, true, stepTimings.get(stepNumber)!);
     } else {
       newCompleted.delete(stepNumber);
-      onStepComplete?.(stepNumber, false);
+      // Remove finish time if verification is unchecked
+      setStepTimings(prev => {
+        const newTimings = new Map(prev);
+        const currentTiming = newTimings.get(stepNumber);
+        if (currentTiming) {
+          const { finishTime, ...rest } = currentTiming;
+          newTimings.set(stepNumber, rest);
+        }
+        return newTimings;
+      });
+      onStepComplete?.(stepNumber, false, stepTimings.get(stepNumber)!);
     }
     setCompletedSteps(newCompleted);
   };
@@ -155,9 +200,13 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
           <h2 className="text-2xl font-bold text-gray-900">
             {steps[currentStep - 1].title}
           </h2>
-          <p className="mt-1 text-gray-600">
+          <span className={`text-xs font-medium px-2.5 py-0.5 rounded mt-2 inline-block ${
+                              completedSteps.has(steps[currentStep - 1].number) 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-gray-100 text-gray-800'
+          }`}>
             {steps[currentStep - 1].subtitle}
-          </p>
+          </span>
         </div>
         
         <div className="p-6">
@@ -247,6 +296,20 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
                               {step.requiredRole}
                             </span>
                             <p className="text-sm text-gray-500 mt-1">{step.subtitle}</p>
+                            
+                            {/* Add timing information */}
+                            {stepTimings.get(step.number) && (
+                              <div className="mt-2 space-y-1">
+                                <p className="text-xs text-gray-500">
+                                  Started: {formatTimestamp(stepTimings.get(step.number)!.startTime)}
+                                </p>
+                                {stepTimings.get(step.number)?.finishTime && (
+                                  <p className="text-xs text-green-600">
+                                    Completed: {formatTimestamp(stepTimings.get(step.number)!.finishTime!)}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
@@ -277,10 +340,31 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
                       {steps[currentStep - 1].description}
                     </p>
 
-                    <button className="w-full text-white bg-blue-700 hover:bg-blue-800 font-medium rounded-lg text-sm px-5 py-2.5 focus:outline-none inline-flex items-center justify-center gap-2 mb-6">
-                      <Download className="w-4 h-4" />
-                      Download Resources
-                    </button>
+                    <div className="mb-6 space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">Started:</span>
+                        <span className="text-gray-900">
+                          {stepTimings.get(currentStep) 
+                            ? formatTimestamp(stepTimings.get(currentStep)!.startTime)
+                            : '-'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600">Completed:</span>
+                        <span className={`${stepTimings.get(currentStep)?.finishTime ? 'text-green-600' : 'text-gray-400'}`}>
+                          {stepTimings.get(currentStep)?.finishTime 
+                            ? formatTimestamp(stepTimings.get(currentStep)!.finishTime!)
+                            : 'Pending'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {steps[currentStep - 1].downloadUrl !== null && steps[currentStep - 1].downloadUrl !== '' ? 
+                      <button className="w-full text-white bg-blue-700 hover:bg-blue-800 font-medium rounded-lg text-sm px-5 py-2.5 focus:outline-none inline-flex items-center justify-center gap-2 mb-6">
+                        <Download className="w-4 h-4" />
+                        Download Resources
+                      </button> : ''
+                    }
 
                     <div className="border-t border-gray-200 my-6"></div>
 
@@ -301,7 +385,7 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
                         ) : (
                           <button
                             onClick={() => setIsSignatureModalOpen(true)}
-                            className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                            className="w-full px-4 py-2 text-sm font-medium text-white bg-green-500 rounded-md hover:bg-green-700"
                           >
                             Capture E-Signature
                           </button>
@@ -323,7 +407,7 @@ const StepperUI = ({ initialStep = 1, onStepComplete, onStepChange }: StepperUIP
                           />
                         </label>
                         <label className="flex items-center justify-between py-2 px-1">
-                          <span className="text-gray-700">Manager Verification</span>
+                          <span className="text-gray-700">Release Manager Verification</span>
                           <input
                             type="checkbox"
                             className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded"
